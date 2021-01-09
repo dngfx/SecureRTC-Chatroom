@@ -1,0 +1,6 @@
+Follow everything here:
+https://github.com/meetecho/janus-gateway
+
+When you get to ./configure, use this:
+
+./configure --enable-libsrtp2 --disable-rabbitmq --disable-mqtt --disable--nanomsg --disable-rabbitmq-event-handler --disable-mqtt-event-handler --disable-nanomsg-event-hangler --disable-gelf-event-handler --disable-plugin-sip --disable-plugin-nosip --enable-javascript-es-module --prefix=/opt/janus
