@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Chatzone</title>
+		<link href="./CSS/bootstrap.min.css" type="text/css" rel="stylesheet">
+		<link href="./CSS/chat.css" type="text/css" rel="stylesheet">
+		<link href="./CSS/all.min.css" type="text/css" rel="stylesheet">
+		<script type="text/javascript" src="./JS/adapter.js"></script>
+		<script type="text/javascript" src="./JS/janus.js"></script>
+		<script type="text/javascript" src="./JS/chat.js"></script>
+		<script type="text/javascript">
+			const server = "wss://websocket.misconfigured.link:9888";
+			const randomId = "chat-"+Janus.randomString(12);
+			const username = Janus.randomString(5);
+			let displayname = null;
+			const roomid = 1234;
+			const rtcIceServers = [
+				{
+					urls: "stun:turn.misconfigured.link:9696"
+				}, {
+					urls: ["turns:turn.misconfigured.link:9696?transport=tcp"],
+					username: "dongfix",
+					credential: "bonerpatrol",
+					credentialType: "password"
+				}
+			];
+			function setNick(elem, event) {
+				let theCode = event.keyCode ? event.keyCode : event.which ? event.which : event.charCode;
+				if(theCode == 13 && elem.value != "") {
+					displayname = elem.value;
+					chat.init(roomid, username, displayname);
+					this.onclick = null;
+					let barrier = document.getElementById("click-to-join");
+					barrier.parentNode.removeChild(barrier);
+				}
+			}
+			window.onload = function() {
+
+			}
+		</script>
+	</head>
+	<body>
+		<div id="click-to-join">
+			<div class="card">
+				<div class="card-header mb-1">Welcome to room 1234</div>
+				<div class="card-body">
+					<h1>Type your username and press enter</h1>
+					<input type="text" id="username-select" onkeypress="setNick(this, event);">
+				</div>
+			</div>
+		</div>
+		<div class="room">
+			<div class="video-container" id="video-container">
+				<div id="videotemplate-local" class="video card">
+					<div class="card-header mb-1">Username</div>
+					<div class="card-body">
+						<div class="no-video" id="video-local"><i class="fa fa-play" id="loadvideo-local" aria-hidden="true"></i><video id="stream-local" style="display: none;"></video></video></div>
+					</div>
+				</div>
+			</div>
+			<div class="chat">
+				<div id="chat-header">
+					<div id="chat-title" class="header text-dark"><b>Room:</b> Chatzone</div>
+					<div id="user-title" class="header text-dark">4 Mods, 12 Users</div>
+				</div>
+				<div id="chat-content" class="content">
+					<div id="chat-box" class="bg-primary">
+						<div id="chat-box-text">
+						</div>
+						<div id="chat-box-input">
+							<input type="text" id="chat-text-input" autocomplete="off" placeholder="Write a message..." disabled="disabled" onkeypress="return checkEnter(this, event);">
+						</div>
+					</div>
+						<div id="user-list" class="content">
+						</div>
+				</div>
+			</div>
+		</div>
+		<div id="videotemplate" class="video card">
+			<div class="card-header mb-1" id="videouser"></div>
+			<div class="card-body">
+				<video id="stream" style="display: none;"></video>
+			</div>
+		</div>
+	</body>
+</html>

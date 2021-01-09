@@ -1,0 +1,190 @@
+body, html {
+	height: 100%;
+	overflow: hidden;
+}
+.room-title {
+	padding-left: 1rem;
+}
+
+.room {
+	height: 100%;
+}
+
+.video-container {
+	width: 100%;
+	height: 70%;
+
+	display: block;
+	margin: 2px 0;
+}
+
+.video-container .video {
+	border-radius: 0;
+	width: 240px;
+
+	margin: 2px;
+
+	display: inline-flex;
+}
+
+.video .card-header {
+	font-size: 12px;
+	padding: 2px 5px;
+	border-radius: 0;
+	margin-bottom: 0!important;
+}
+
+.video .card-body {
+	padding: 2px;
+
+	height: 135px;
+}
+
+.no-video {
+	display: block;
+	height: 100%;
+}
+
+.no-video i {
+	width: 100%;
+	height: 100%;
+
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+.no-video video {
+	max-height: 100%;
+	max-width: 100%;
+}
+
+.chat {
+	width: 100%;
+	height: 30%;
+	display: flex;
+	flex-direction: column;
+
+	border-top: 1px solid #272b30;
+}
+
+#chat-header {
+	display: flex;
+	flex-direction: row;
+	max-height: 11%;
+	font-family: monospace;
+	flex-grow:1;
+}
+
+#chat-content {
+	flex-grow:2;
+	display: flex;
+	flex-direction: row;
+	max-height: 89%;
+}
+
+#chat-title {
+	flex-grow: 4;
+}
+
+#user-title {
+	flex-grow: 1;
+	text-align: center;
+	font-weight:bold;
+}
+
+#chat-box {
+	flex-grow: 3;
+	border-right: 1px solid #272b30;
+	overflow-y: auto;
+}
+
+.chat-message {
+	display: block;
+	padding: 2px 8px;
+	font-family: monospace;
+	font-size: 11px;
+}
+
+.chat-message:first-child {
+	margin-top: 8px;
+}
+
+.chat-message:nth-child(even) {
+	color: white;
+}
+
+.chat-message:nth-child(odd) {
+}
+
+#user-list {
+	overflow-y: auto;
+	max-height: auto;
+	flex-grow: 1;
+}
+
+#user-list > div {
+	padding: 3px 10px;
+	font-family: monospace;
+}
+
+#user-list > div:nth-child(even) {
+	background-color: #3a3f44;
+}
+
+#user-list > div:nth-child(odd) {
+	background-color: rgb(89, 95, 100);
+}
+
+.chat .header {
+	background-color: #7a8288;
+	padding: 5px 15px;
+}
+
+#videotemplate {
+	display: none;
+}
+
+#chat-box {
+	display: flex;
+	flex-direction: column;
+}
+
+#chat-box-text {
+	flex-grow: 2;
+	overflow-y: auto;
+}
+
+#chat-box-text .username::before {
+	content: "<";
+}
+
+#chat-box-text .username::after {
+	content: ">";
+}
+
+#chat-text-input {
+	width: 100%;
+}
+
+#click-to-join {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	position: absolute;
+	z-index: 100;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: rgba(0, 0, 0, 0.5);
+}
+
+#click-to-join .card .card-header {
+	text-align: center;
+	font-weight: bold;
+}
+
+#click-to-join .card .card-body {
+	text-align: center;
+}
