@@ -7,13 +7,14 @@
 		<link href="./CSS/all.min.css" type="text/css" rel="stylesheet">
 		<script type="text/javascript" src="./JS/adapter.js"></script>
 		<script type="text/javascript" src="./JS/janus.js"></script>
-		<script type="text/javascript" src="./JS/chat.js"></script>
+		<script type="text/javascript" src="./JS/chat-new.js"></script>
 		<script type="text/javascript">
 			const server = "wss://websocket.misconfigured.link:9888";
-			const randomId = "chat-"+Janus.randomString(12);
-			const username = Janus.randomString(5);
-			let displayname = null;
+			const randomId = randomString(12);
+			const uniqueId = "chat-" + randomId;
+			const username = randomString(5);
 			const roomid = 1234;
+			const apiSecret = "boners";
 			const rtcIceServers = [
 				{
 					urls: "stun:turn.misconfigured.link:9696"
@@ -24,18 +25,30 @@
 					credentialType: "password"
 				}
 			];
+
+			let displayname = null;
+			let sfu = null;
+			let myId = null;
+			let myStream = null;
+			let privateId = null;
+			let videoFeeds = [];
+			let bitrateTimer = [];
+
+			let doSimulcast = false;
+			let doSimulcast2 = false;
+			let subscriberMode = true;
+
 			function setNick(elem, event) {
 				let theCode = event.keyCode ? event.keyCode : event.which ? event.which : event.charCode;
 				if(theCode == 13 && elem.value != "") {
 					displayname = elem.value;
-					chat.init(roomid, username, displayname);
+					chatRoom.init(roomid, username, displayname, apiSecret);
 					this.onclick = null;
 					let barrier = document.getElementById("click-to-join");
 					barrier.parentNode.removeChild(barrier);
 				}
 			}
 			window.onload = function() {
-
 			}
 		</script>
 	</head>
