@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 const chatRoom = {
 	server:       null,
 	apiSecret:    null,
@@ -12,6 +13,8 @@ const chatRoom = {
 	chatRoom:     null,
 	debug:        "all",
 	transactions: {},
+	participants: {},
+	iceServers:   null,
 	init:         ( server, room, user, display, uid, rid, apisecret ) => {
 		cr.server      = server;
 		cr.roomId      = room;
@@ -20,6 +23,7 @@ const chatRoom = {
 		cr.uniqueId    = uid;
 		cr.randomId    = rid;
 		cr.apiSecret   = apisecret;
+		cr.iceServers  = iceServers;
 
 		cr.initJanus();
 	},
@@ -36,7 +40,6 @@ const chatRoom = {
 		cr.janus = new Janus({
 			debug:      cr.debug,
 			server:     cr.server,
-			apisecret:  cr.apiSecret,
 			iceServers: cr.iceServers,
 			success:    () => {
 				cr.janus.attach({
@@ -45,16 +48,6 @@ const chatRoom = {
 					success:  ( plugin ) => {
 						cr.chatRoom = plugin;
 						console.log( cr.chatRoom );
-						const register = {
-							request: "join",
-							room:    cr.roomId,
-							ptype:   "publisher",
-							display: cr.displayName,
-						};
-
-						cr.chatRoom.send({
-							message: register,
-						});
 					},
 					error: ( error ) => {
 						Janus.error( "  -- Error attaching plugin...", error );
@@ -97,9 +90,8 @@ const chatRoom = {
 									};
 
 									cr.textPlugin.send({
-										message:   body,
-										apisecret: cr.apiSecret,
-										jsep:      jsep,
+										message: body,
+										jsep:    jsep,
 									});
 								},
 								error: ( error ) => {
@@ -113,13 +105,16 @@ const chatRoom = {
 						const transaction = utils.randomString( 12 );
 
 						const register = {
-							textroom:    "join",
-							transaction: transaction,
-							room:        cr.roomId,
-							username:    cr.userName,
-							display:     cr.displayName,
-							apisecret:   cr.apiSecret,
+							request:  "join",
+							room:     cr.roomId,
+							username: cr.userName,
+							ptype:    "publisher",
+							display:  cr.displayName,
 						};
+
+						cr.chatRoom.send({
+							message: register,
+						});
 
 						cr.transactions[ transaction ] = ( response ) => {
 							if( response[ "textroom" ] === "error" ) {
@@ -147,10 +142,9 @@ const chatRoom = {
 									cr.participants[ p.username ] = p.display;
 									if( p.username !== cr.userName && notExists ) {
 										info = {
-											username:  p.username,
-											display:   p.display,
-											date:      utils.getDateString(),
-											apisecret: cr.apiSecret,
+											username: p.username,
+											display:  p.display,
+											date:     utils.getDateString(),
 										};
 
 										if( !tr.textUsers[ info[ "username" ] ] ) {
@@ -180,14 +174,9 @@ const chatRoom = {
 							console.log( "Pushing transaction ", transaction );
 							cr.transactions[ transaction ]( json );
 							delete cr.transactions[ transaction ];
-
-							return;
 						}
 
-						const action = json[ "textroom" ];
-						console.log( "Action: ", action );
-
-						tr.handleData( action, json );
+						tr.handleData( json[ "textroom" ], json );
 					},
 				});
 			},
@@ -231,21 +220,21 @@ const textRoom = {
 	},
 	connectTextRoom: () => {
 		tr.textConnection.attach({
-			plugin:   "janus.plugin.textroom",
-			opaqueId: cr.uniqueId,
-			success:  ( plugin ) => {
+			plugin:    "janus.plugin.textroom",
+			opaqueId:  cr.uniqueId,
+			apisecret: cr.apiSecret,
+			debug:     cr.debug,
+			success:   ( plugin ) => {
 				cr.textPlugin = plugin;
 
 				console.log( "Plugin attached! (" + cr.textPlugin.getPlugin() + ", id=" + cr.textPlugin.getId() + ")" );
 				const body = {
-					request:   "setup",
-					apisecret: cr.apiSecret,
+					request: "setup",
 				};
 
 				console.log( "Sending message:", body );
 				cr.textPlugin.send({
-					message:   body,
-					apisecret: cr.apiSecret,
+					message: body,
 				});
 			},
 			error: ( error ) => {
@@ -261,6 +250,7 @@ const textRoom = {
 				console.log( "Janus says our WebRTC PeerConnection is " + ( on ? "up" : "down" ) + " now" );
 			},
 			onmessage: ( message, jsep ) => {
+				console.log( message, jsep );
 				console.log( ":: Got a textRoom Message :: ", message );
 
 				if( message[ "error" ] ) {
@@ -286,9 +276,8 @@ const textRoom = {
 							};
 
 							cr.textPlugin.send({
-								message:   body,
-								apisecret: cr.apiSecret,
-								jsep:      jsep,
+								message: body,
+								jsep:    jsep,
 							});
 						},
 						error: ( error ) => {
@@ -298,6 +287,7 @@ const textRoom = {
 				}
 			},
 			ondataopen: ( data ) => {
+				console.log( "DATAOPEN:", data );
 				console.log( "The TextRoom DataChannel is available" );
 				const transaction = utils.randomString( 12 );
 				const register    = {
@@ -306,7 +296,6 @@ const textRoom = {
 					room:        cr.roomId,
 					username:    cr.userName,
 					display:     cr.displayName,
-					apisecret:   cr.apiSecret,
 				};
 
 				cr.transactions[ transaction ] = ( response ) => {
@@ -320,6 +309,7 @@ const textRoom = {
 
 					if( response.participants && response.participants.length > 0 ) {
 						for( i in response.participants ) {
+							console.log( response.participants[ i ] );
 							const p                       = response.participants[ i ];
 							cr.participants[ p.username ] = p.display;
 							if( p.username !== cr.userName && document.getElementById( "user-" + p.username ) === null ) {
@@ -348,6 +338,7 @@ const textRoom = {
 				});
 			},
 			ondata: ( data ) => {
+				console.log( "DATA:", data );
 				const json        = JSON.parse( data );
 				const transaction = json[ "transaction" ];
 
@@ -355,8 +346,6 @@ const textRoom = {
 					console.log( "Pushing transaction ", transaction );
 					cr.transactions[ transaction ]( json );
 					delete cr.transactions[ transaction ];
-
-					return;
 				}
 
 				const action = json[ "textroom" ];
@@ -378,10 +367,9 @@ const textRoom = {
 
 			if( p.username !== cr.userName && document.getElementById( "user-" + p.username ) === null ) {
 				info = {
-					username:  p.username,
-					display:   p.display,
-					date:      utils.getDateString(),
-					apisecret: cr.apiSecret,
+					username: p.username,
+					display:  p.display,
+					date:     utils.getDateString(),
 				};
 
 				if( !tr.textUsers[ info[ "username" ] ] ) {
@@ -444,11 +432,10 @@ const textRoom = {
 	handleMessage: ( data ) => {
 		console.log( data );
 		const info = {
-			from:      data[ "from" ],
-			text:      utils.cleanMessage( data[ "text" ] ),
-			date:      utils.getDateString( data[ "date" ] ),
-			private:   data[ "whisper" ] === true,
-			apisecret: cr.apiSecret,
+			from:    data[ "from" ],
+			text:    utils.cleanMessage( data[ "text" ] ),
+			date:    utils.getDateString( data[ "date" ] ),
+			private: data[ "whisper" ] === true,
 		};
 
 		tr.addMessage( info );
@@ -461,10 +448,9 @@ const textRoom = {
 	},
 	handleJoin: ( data ) => {
 		const info = {
-			username:  data[ "username" ],
-			display:   data[ "display" ],
-			date:      utils.getDateString(),
-			apisecret: cr.apiSecret,
+			username: data[ "username" ],
+			display:  data[ "display" ],
+			date:     utils.getDateString(),
 		};
 
 		console.log( "Calling remove attribute" );
@@ -491,8 +477,10 @@ const textRoom = {
 			//vr.connectVideo();
 		}
 	},
+	handleSuccess: ( data ) => {
+		console.log( data );
+	},
 	handleData: ( action, data ) => {
-		console.log( action, data );
 		switch ( action ) {
 			case "message":
 				tr.handleMessage( data );

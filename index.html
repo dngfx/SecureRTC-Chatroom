@@ -26,18 +26,16 @@
 			let videoFeeds = [];
 			let bitrateTimer = [];
 
-			const rtcIceServers = {
-				iceServers:[{
-					urls: "stun:turn.misconfigured.link:9696"
-				},
-				{
-					urls: ["turns:turn.misconfigured.link:9696?transport=tcp"],
-					username: "dongfix",
-					credential: "bonerpatrol",
-					credentialType: "password"
-				}],
+			const iceServers = [{
+				urls: ["stun:turn.misconfigured.link:9696"]
+			},
+			{
+				urls: ["turns:turn.misconfigured.link:9696?transport=tcp"],
+				username: "dongfix",
+				credential: "bonerpatrol",
+				credentialType: "password",
 				iceTransportPolicy: "relay"
-			};
+			}];
 
 			let doSimulcast = false;
 			let doSimulcast2 = false;
@@ -86,7 +84,7 @@
 						<div id="chat-box-text">
 						</div>
 						<div id="chat-box-input">
-							<input type="text" id="chat-text-input" autocomplete="off" placeholder="Write a message..." disabled="disabled" onkeypress="return checkEnter(this, event);">
+							<input type="text" id="chat-text-input" autocomplete="off" placeholder="Write a message..." disabled="disabled" onkeypress="return utils.checkEnter(this, event);">
 						</div>
 					</div>
 						<div id="user-list" class="content">
