@@ -23,6 +23,10 @@ const chatRoom = {
 		cr.randomId    = rid;
 		cr.apiSecret   = apisecret;
 		cr.iceServers  = iceServers;
+		cr.textRoom    = null;
+		cr.videoRoom   = null;
+		cr.textPlugin  = {};
+		cr.videoPlugin = {};
 
 		console.log( cr );
 
@@ -38,12 +42,12 @@ const chatRoom = {
 		});
 	},
 	connectChat: () => {
-		cr.plugin = new Janus({
+		cr.textRoom = new Janus({
 			debug:      cr.debug,
 			server:     cr.server,
 			iceServers: cr.iceServers,
 			success:    () => {
-				cr.plugin.attach({
+				cr.textRoom.attach({
 					plugin:   "janus.plugin.textroom",
 					opaqueId: cr.opaqueId,
 					success:  ( plugin ) => {
@@ -163,9 +167,12 @@ const chatRoom = {
 											date:     utils.getDateString(),
 										};
 
-										if( !tr.textUsers[ info[ "username" ] ] ) {
-											tr.textUsers[ info[ "username" ] ] = info[ "display" ];
-										}
+										cr.textUsers[ info["username"] ] =  {
+											username: info["username"],
+											display: info["display"],
+											date: utils.getDateString(),
+											transaction: transaction
+										};
 
 										tr.addToUserList( info );
 									}
@@ -215,15 +222,142 @@ const chatRoom = {
 const videoRoom = {
 	videoFeeds:      {},
 	videoConnection: null,
-	init:            ( id, server ) => {},
-	joinRoom:        () => {},
+	myFeed:          null,
+	element:         null,
+	init:            () => {
+		[ ...document.querySelectorAll( ".no-video" ) ].map( ( element, index, array ) => {
+			const videoId   = element.id;
+			element.onclick = function( self ) {
+				vr.element = element;
+				vr.start( element );
+			};
+		});
+	},
+	start: ( id ) => {
+		cr.videoPlugin.createOffer({
+			media: {
+				audioRecv: false,
+				videoRecv: false,
+				audioSend: false,
+				videoSend: true,
+				video:     "lowres-16:9",
+			},
+			success: ( jsep ) => {
+				console.log( "Got Published SDP!", jsep );
+
+				const publish = {
+					request:   "configure",
+					audio:     false,
+					video:     true,
+					apisecret: cr.apiSecret,
+				};
+
+				console.log( "Configured videoPlugin Configure", jsep );
+
+				vr.element = document.getElementById( id );
+
+				cr.videoPlugin.send({
+					message: publish,
+					jsep:    jsep,
+				});
+
+				vr.element = id;
+			},
+		});
+	},
+	connectVideo: () => {
+		cr.janus.attach({
+			plugin:   "janus.plugin.videoroom",
+			opaqueId: randomId,
+			apisecre: apiSecret,
+			success:  ( plugin ) => {
+				cr.videoPlugin = plugin;
+				console.log( "Plugin attached! (" + cr.videoPlugin.getPlugin() + ", id=" + cr.videoPlugin.getId() + ")" );
+				console.log( "  -- This is a publisher/manager" );
+
+				const register = {
+					request:   "join",
+					room:      cr.roomId,
+					ptype:     "publisher",
+					display:   cr.displayName,
+					apisecret: cr.apiSecret,
+				};
+
+				cr.videoPlugin.send({
+					message: register,
+				});
+			},
+			error:    ( error ) => {},
+			iceState: ( state ) => {
+				console.log( "ICE State changed to " + state );
+			},
+			mediaState: ( medium, on ) => {
+				console.log( "Janus " + ( on ? "started" : "stopped" ) + " receiving our " + medium );
+			},
+			webrtcState: ( on ) => {
+				console.log( "Janus says our WebRTC PeerConnection is " + ( on ? "up" : "down" ) + " now" );
+				if( !on ) {
+					return;
+				}
+			},
+			onmessage: ( message, jsep ) => {
+				console.log( " ::: Got a message (Publisher) ::: ", message );
+
+				const event = message[ "videoroom" ];
+				console.log( "Event: ", event );
+
+				switch ( event ) {
+					case "joined":
+						vr.joinedRoom( message );
+						break;
+
+					case "event":
+						vr.handleEvent( message );
+						break;
+
+					case "destroyed":
+						vr.joinedRoom( message );
+						break;
+
+					default:
+						break;
+				}
+			},
+			onlocalstream: ( stream ) => {
+				Janus.debug( " ::: Got a local video stream ::: ", stream );
+
+				cr.myFeed     = stream;
+				let localElem = document.getElementById( "video-local" );
+				vr.showVideo( localElem, stream );
+				localElem = null;
+			},
+			onremotestream: ( stream ) => {},
+			oncleanup:      () => {
+				cr.myFeed = null;
+			},
+		});
+	},
+	handleEvent: ( message ) => {
+		Janus.log( " :: Logging handleEvent (Video) :: ", stream );
+		if( messsage[ "publishers" ] ) {
+			const list = message[ "publishers" ];
+			Janus.log( " :: Got a list of Video Publisher Feeds ::", list );
+
+			let audio, display, id, video;
+			console.log( "The list", list );
+
+			for( const f in list ) {
+				console.log( "List:", list[ f ] );
+			}
+		}
+	},
 };
 
 const textRoom = {
-	textUsers:      {},
 	textConnection: null,
 	textSession:    null,
 	textPlugin:     null,
+	randomId:       utils.randomString( 12 ),
 	init:           ( id, server ) => {
 		tr.textConnection = Janus.init({
 			debug:        cr.debug,
@@ -238,6 +372,7 @@ const textRoom = {
 			plugin:    "janus.plugin.textroom",
 			opaqueId:  cr.uniqueId,
 			apisecret: cr.apiSecret,
+			textFeeds: {},
 			debug:     cr.debug,
 			success:   ( plugin ) => {
 				cr.users = plugin;
@@ -336,9 +471,12 @@ const textRoom = {
 									transaction: transaction,
 								};
 
-								if( !cr.textUsers[ info[ "username" ] ] ) {
-									cr.textUsers[ info[ "username" ] ] = info[ "display" ];
-								}
+								cr.textUsers[ info["username"] ] =  {
+									username: info["username"],
+									display: info["display"],
+									date: utils.getDateString(),
+									transaction: transaction
+								};
 
 								tr.addToUserList( info );
 							}
@@ -389,8 +527,8 @@ const textRoom = {
 					date:     utils.getDateString(),
 				};
 
-				if( !tr.textUsers[ info[ "username" ] ] ) {
-					tr.textUsers[ info[ "username" ] ] = info[ "display" ];
+				info[ "username" ] = info[ "username" ].toString();
+
 				}
 
 				tr.addToUserList( info );
@@ -403,8 +541,8 @@ const textRoom = {
 		const userlist = document.getElementById( "user-list" );
 
 		const newlist     = document.createElement( "div" );
-		newlist.id        = "user-" + info[ "username" ];
-		newlist.innerText = tr.textUsers[ info[ "username" ] ];
+		newlist.id        = "user-" + info.username.toString();
+		newlist.innerText = tr.textUsers[ info.username.toString() ];
 		userlist.appendChild( newlist );
 
 		info[ "message" ] = `<b>${tr.textUsers[ info[ "username" ] ]}</b> has joined the room`;
@@ -491,18 +629,26 @@ const textRoom = {
 			username: data[ "username" ],
 			display:  data[ "display" ],
 			date:     utils.getDateString(),
+			randomId: randomId,
 		};
 
 		Janus.log( "Calling remove attribute" );
 		document.getElementById( "chat-text-input" ).removeAttribute( "disabled" );
+		const user   = data[ "username" ];
+		const id     = data[ "randomId" ];
+		const exists = cr.hasOwnProperty( user );
 
-		if( !tr.textUsers.hasOwnProperty( data[ "username" ] ) ) {
-			tr.textUsers[ data[ "username" ] ] = data[ "display" ];
+		console.log( cr.textPlugin );
+
+		if( !exists ) {
+			cr.textPlugin[ data[ "username" ] ] = data[ "display" ];
 		}
 
+		console.log( cr.textUsers );
+
 		Janus.log( "Join JSON", data );
-		tr.textUsers[ data[ "username" ] ] = data[ "display" ];
-		const userItem                     = document.getElementById( "user-" + info[ "username" ] );
+		cr.textPlugin[ data[ "username" ] ] = data[ "display" ];
+		const userItem                      = document.getElementById( "user-" + info[ "username" ] );
 
 		// If user is not in the list
 		if( userItem === null ) {
@@ -524,18 +670,9 @@ const textRoom = {
 			const p = data[ "participants" ];
 			console.log( "Success!", data );
 			const len = p.length;
-			let i     = 0;
 
-			for( i = 0; i < len; i++ ) {
-				const user = p[ i ];
-				info       = {
-					username: user[ "username" ],
-					display:  user[ "display" ],
-				};
-
-				if( !cr.users.hasOwnProperty( info.username ) ) {
-					cr.users[ info.username ] = info.display;
-				}
+			if( !cr.users.hasOwnProperty( info.username ) ) {
+				cr.users[ info.username ] = info.display;
 			}
 		}
 	},
@@ -548,11 +685,11 @@ const textRoom = {
 
 		const message = {
 			date:    utils.getDateString(),
-			message: `<b>${tr.textUsers[ username ]}</b> has left the room`,
+			message: `<b>${cr.textPlugin[ username ]}</b> has left the room`,
 		};
 
 		tr.addStatusMessage( message );
-		delete tr.textUsers[ username ];
+		delete cr.textPlugin[ username ];
 	},
 	handleData: ( action, data ) => {
 		switch ( action ) {
@@ -577,6 +714,24 @@ const textRoom = {
 				Janus.log( action );
 				break;
 		}
+	},
+	handleEvent: ( message ) => {
+		console.log( "Handling event", message );
+		const list = message[ "publishers" ];
+		let audio, display, id, video;
+		console.log( "The list:", list );
+
+		for( const f in list ) {
+			const user = p[ i ];
+			list[ f ]  = {
+				id:      list[ f ][ "id" ],
+				display: list[ f ][ "display" ],
+				audio:   list[ f ][ "audio_codec" ],
+				video:   list[ f ][ "video_codec" ],
+			};
+		}
+
+		console.log( list );
 	},
 };
 

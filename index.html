@@ -5,16 +5,16 @@
 		<link href="./CSS/bootstrap.min.css" type="text/css" rel="stylesheet">
 		<link href="./CSS/chat.css" type="text/css" rel="stylesheet">
 		<link href="./CSS/all.min.css" type="text/css" rel="stylesheet">
+		<script type="text/javascript" src="./JS/utils.js"></script>
 		<script type="text/javascript" src="./JS/adapter.js"></script>
 		<script type="text/javascript" src="./JS/janus.js"></script>
-		<script type="text/javascript" src="./JS/utils.js"></script>
 		<script type="text/javascript" src="./JS/chat.js"></script>
 
 		<script type="text/javascript">
 			const server = "wss://websocket.misconfigured.link:9888";
 			const randomId = utils.randomString(12);
 			const uniqueId = "chat-" + randomId;
-			const username = utils.randomString(5);
+			const username = utils.randomString(12);
 			const roomid = 1234;
 			const apiSecret = "boners";
 
