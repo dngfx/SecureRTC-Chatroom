@@ -37,7 +37,7 @@ const utils = {
 		const theCode = event.keyCode ? event.keyCode : event.which ? event.which : event.charCode;
 		if( theCode === 13 ) {
 			if( field.id === "chat-text-input" ) {
-				tr.sendMessage( field.value );
+				tr.sendMessage( field.value, uniqueId );
 			}
 
 			return false;

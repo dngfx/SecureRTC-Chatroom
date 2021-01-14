@@ -619,10 +619,10 @@ const text = {
 								const when     = new Date();
 								const elem     = document.getElementById( "user-" + username );
 								elem.parentNode.removeChild( elem );
-								msg = `<b>${text.users[ username ]}</b> has left the room`;
+								msg = `<b>${tr.textUsers[ username ]}</b> has left the room`;
 
 								text.addStatusMessage( data, getDateString(), msg );
-								delete text.users[ username ];
+								delete tx.textUsers[ username ];
 								break;
 						}
 

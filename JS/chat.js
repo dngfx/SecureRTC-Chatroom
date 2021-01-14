@@ -6,12 +6,11 @@ const chatRoom = {
 	roomId:       null,
 	userName:     null,
 	displayName:  null,
-	uniqueId:     null,
-	randomId:     null,
-	textRoom:     null,
+	users:        {},
+	plugin:       null,
 	videoRoom:    null,
 	chatRoom:     null,
-	debug:        "all",
+	debug:        true,
 	transactions: {},
 	participants: {},
 	iceServers:   null,
@@ -25,6 +24,8 @@ const chatRoom = {
 		cr.apiSecret   = apisecret;
 		cr.iceServers  = iceServers;
 
+		console.log( cr );
+
 		cr.initJanus();
 	},
 	initJanus: () => {
@@ -37,17 +38,24 @@ const chatRoom = {
 		});
 	},
 	connectChat: () => {
-		cr.janus = new Janus({
+		cr.plugin = new Janus({
 			debug:      cr.debug,
 			server:     cr.server,
 			iceServers: cr.iceServers,
 			success:    () => {
-				cr.janus.attach({
+				cr.plugin.attach({
 					plugin:   "janus.plugin.textroom",
-					opaqueId: cr.uniqueId,
+					opaqueId: cr.opaqueId,
 					success:  ( plugin ) => {
-						cr.chatRoom = plugin;
-						console.log( cr.chatRoom );
+						cr.users[ username ] = plugin.id;
+
+						cr.users[ username ] = plugin;
+
+						const body = {
+							request: "setup",
+						};
+						Janus.debug( "Sending message:", body );
+						cr.users[ username ].send({message: body});
 					},
 					error: ( error ) => {
 						Janus.error( "  -- Error attaching plugin...", error );
@@ -65,18 +73,19 @@ const chatRoom = {
 						}
 					},
 					onmessage: ( message, jsep ) => {
-						console.log( " :: Got a message :::", message );
+						Janus.log( " :: Got a message :::", message );
+						console.log( message );
 
 						if( message[ "error" ] ) {
-							console.error( message[ "error" ] );
+							Janus.error( message[ "error" ] );
 
 							return;
 						}
 
 						if( jsep ) {
-							console.log( "Handling JSEP", jsep );
+							Janus.log( "Handling JSEP", jsep );
 
-							cr.textPlugin.createAnswer({
+							cr.users[ username ].createAnswer({
 								jsep:  jsep,
 								media: {
 									audio: false,
@@ -84,12 +93,12 @@ const chatRoom = {
 									data:  true,
 								},
 								success: ( jsep ) => {
-									console.log( "Got SDP For TextRoom:", jsep );
+									Janus.log( "Got SDP For TextRoom:", jsep );
 									const body = {
 										request: "ack",
 									};
 
-									cr.textPlugin.send({
+									cr.users[ username ].send({
 										message: body,
 										jsep:    jsep,
 									});
@@ -101,43 +110,50 @@ const chatRoom = {
 						}
 					},
 					ondataopen: ( data ) => {
-						console.log( "The DataChannel is now available!" );
+						console.log( data );
+						Janus.log( "The DataChannel is now available!" );
 						const transaction = utils.randomString( 12 );
 
 						const register = {
-							request:  "join",
-							room:     cr.roomId,
-							username: cr.userName,
-							ptype:    "publisher",
-							display:  cr.displayName,
+							textroom:    "join",
+							room:        cr.roomId,
+							username:    cr.userName,
+							ptype:       "publisher",
+							display:     cr.displayName,
+							transaction: transaction,
 						};
 
-						cr.chatRoom.send({
+						console.log( cr.users[ username ] );
+
+						cr.users[ username ].send({
 							message: register,
 						});
+
+						console.log( cr.users );
 
 						cr.transactions[ transaction ] = ( response ) => {
 							if( response[ "textroom" ] === "error" ) {
 								switch ( response[ "error_code" ] ) {
 									case 417:
-										console.error( "There is no such room" );
+										Janus.error( "There is no such room" );
 										break;
 
 									default:
-										console.error( "Unknown error", response[ "error" ] );
+										Janus.error( "Unknown error", response[ "error" ] );
 										break;
 								}
 							}
 
-							let i, info, nonExists;
+							let i, info;
 
 							const rp = response.participants;
 							if( rp && rp.length > 0 ) {
 								for( i in rp ) {
 									const p = rp[ i ];
-									console.log( `Participant ${i}`, p );
+									console.log( p );
+									Janus.log( `Participant ${i}`, p );
 
-									notExists = document.getElementById( "user-" + p.username ) === null;
+									const notExists = document.getElementById( "user-" + p.username ) === null;
 
 									cr.participants[ p.username ] = p.display;
 									if( p.username !== cr.userName && notExists ) {
@@ -151,18 +167,16 @@ const chatRoom = {
 											tr.textUsers[ info[ "username" ] ] = info[ "display" ];
 										}
 
-										console.log( "Trying to add to user list", info );
-
 										tr.addToUserList( info );
 									}
 								}
 							}
 						};
 
-						cr.textPlugin.data({
+						cr.users[ username ].data({
 							text:  JSON.stringify( register ),
 							error: ( reason ) => {
-								console.error( reason );
+								Janus.error( reason );
 							},
 						});
 					},
@@ -171,7 +185,7 @@ const chatRoom = {
 						const transaction = json[ "transaction" ];
 
 						if( cr.transactions[ transaction ] ) {
-							console.log( "Pushing transaction ", transaction );
+							Janus.log( "Pushing transaction ", transaction );
 							cr.transactions[ transaction ]( json );
 							delete cr.transactions[ transaction ];
 						}
@@ -183,7 +197,7 @@ const chatRoom = {
 		});
 	},
 	addToUserList: ( info ) => {
-		console.log( "Add to user list: ", info );
+		Janus.log( "Add to user list: ", info );
 		const userlist = document.getElementById( "user-list" );
 
 		const newlist     = document.createElement( "div" );
@@ -191,8 +205,9 @@ const chatRoom = {
 		newlist.innerText = tr.textUsers[ info[ "username" ] ];
 		userlist.appendChild( newlist );
 
-		info[ "message" ] = `<b>${tr.textUsers[ info[ "username" ] ]}</b> has joined the room`;
-		console.log( info );
+		cr.users[ newlist.id ] = {user: info[ "username" ], display: info[ "display" ]};
+		info[ "message" ]      = `<b>${tr.textUsers[ info[ "username" ] ]}</b> has joined the room`;
+		Janus.log( info );
 		tr.addStatusMessage( info );
 	},
 };
@@ -225,44 +240,44 @@ const textRoom = {
 			apisecret: cr.apiSecret,
 			debug:     cr.debug,
 			success:   ( plugin ) => {
-				cr.textPlugin = plugin;
+				cr.users = plugin;
 
-				console.log( "Plugin attached! (" + cr.textPlugin.getPlugin() + ", id=" + cr.textPlugin.getId() + ")" );
+				Janus.log( "Plugin attached! (" + cr.users.getPlugin() + ", id=" + cr.users.getId() + ")" );
 				const body = {
 					request: "setup",
 				};
 
-				console.log( "Sending message:", body );
-				cr.textPlugin.send({
+				Janus.log( "Sending message:", body );
+				cr.users.send({
 					message: body,
 				});
 			},
 			error: ( error ) => {
-				console.log( "-- Error attaching textroom plugin", error );
+				Janus.log( "-- Error attaching textroom plugin", error );
 			},
 			iceState: ( state ) => {
-				console.log( "ICE state changed to " + state );
+				Janus.log( "ICE state changed to " + state );
 			},
 			mediaState: ( medium, on ) => {
-				console.log( "Janus " + ( on ? "started" : "stopped" ) + " receiving our " + medium );
+				Janus.log( "Janus " + ( on ? "started" : "stopped" ) + " receiving our " + medium );
 			},
 			webrtcState: ( on ) => {
-				console.log( "Janus says our WebRTC PeerConnection is " + ( on ? "up" : "down" ) + " now" );
+				Janus.log( "Janus says our WebRTC PeerConnection is " + ( on ? "up" : "down" ) + " now" );
 			},
 			onmessage: ( message, jsep ) => {
-				console.log( message, jsep );
-				console.log( ":: Got a textRoom Message :: ", message );
+				Janus.log( message, jsep );
+				Janus.log( ":: Got a textRoom Message :: ", message );
 
 				if( message[ "error" ] ) {
-					console.error( message[ "error" ] );
+					Janus.error( message[ "error" ] );
 
 					return;
 				}
 
 				if( jsep ) {
-					console.log( "Handling JSEP", jsep );
+					Janus.log( "Handling JSEP", jsep );
 
-					cr.textPlugin.createAnswer({
+					cr.users.createAnswer({
 						jsep:  jsep,
 						media: {
 							audio: false,
@@ -270,12 +285,12 @@ const textRoom = {
 							data:  true,
 						},
 						success: ( jsep ) => {
-							console.log( "Got SDP For TextRoom:", jsep );
+							Janus.log( "Got SDP For TextRoom:", jsep );
 							const body = {
 								request: "ack",
 							};
 
-							cr.textPlugin.send({
+							cr.users.send({
 								message: body,
 								jsep:    jsep,
 							});
@@ -287,8 +302,7 @@ const textRoom = {
 				}
 			},
 			ondataopen: ( data ) => {
-				console.log( "DATAOPEN:", data );
-				console.log( "The TextRoom DataChannel is available" );
+				Janus.log( "The TextRoom DataChannel is available" );
 				const transaction = utils.randomString( 12 );
 				const register    = {
 					textroom:    "join",
@@ -298,9 +312,9 @@ const textRoom = {
 					display:     cr.displayName,
 				};
 
-				cr.transactions[ transaction ] = ( response ) => {
+				cr.transactions[ transaction ] = function( response ) {
 					if( response[ "textroom" ] === "error" ) {
-						console.error( `Error code ${response[ "error_code" ]} ${response}` );
+						Janus.error( `Error code ${response[ "error_code" ]} ${response}` );
 
 						return;
 					}
@@ -309,18 +323,21 @@ const textRoom = {
 
 					if( response.participants && response.participants.length > 0 ) {
 						for( i in response.participants ) {
-							console.log( response.participants[ i ] );
-							const p                       = response.participants[ i ];
+							Janus.log( response.participants[ i ] );
+							const p = response.participants[ i ];
+							console.log( p );
 							cr.participants[ p.username ] = p.display;
+
 							if( p.username !== cr.userName && document.getElementById( "user-" + p.username ) === null ) {
 								info = {
-									username: p.username,
-									display:  p.display,
-									date:     utils.getDateString(),
+									username:    p.username,
+									display:     p.display,
+									date:        utils.getDateString(),
+									transaction: transaction,
 								};
 
-								if( !tr.textUsers[ info[ "username" ] ] ) {
-									tr.textUsers[ info[ "username" ] ] = info[ "display" ];
+								if( !cr.textUsers[ info[ "username" ] ] ) {
+									cr.textUsers[ info[ "username" ] ] = info[ "display" ];
 								}
 
 								tr.addToUserList( info );
@@ -329,29 +346,29 @@ const textRoom = {
 					}
 				};
 
-				console.log( JSON.stringify( register ) );
-				cr.textPlugin.data({
+				Janus.log( JSON.stringify( cr.users ) );
+				cr.users.data({
 					text:  JSON.stringify( register ),
 					error: ( reason ) => {
-						console.error( reason );
+						Janus.error( reason );
 					},
 				});
 			},
 			ondata: ( data ) => {
-				console.log( "DATA:", data );
+				Janus.log( "DATA:", data );
 				const json        = JSON.parse( data );
 				const transaction = json[ "transaction" ];
 
 				if( cr.transactions[ transaction ] ) {
-					console.log( "Pushing transaction ", transaction );
+					Janus.log( "Pushing transaction ", transaction );
 					cr.transactions[ transaction ]( json );
 					delete cr.transactions[ transaction ];
 				}
 
 				const action = json[ "textroom" ];
-				console.log( "Action: ", action );
+				Janus.log( "Action: ", action );
 
-				console.log( "Handling data: ", action, json );
+				Janus.log( "Handling data: ", action, json );
 				tr.handleData( action, json );
 			},
 		});
@@ -361,7 +378,7 @@ const textRoom = {
 
 		for( i in participants ) {
 			const p = participants[ i ];
-			console.log( `Participant ${i}`, p );
+			Janus.log( `Participant ${i}`, p );
 
 			cr.participants[ p.username ] = p.display;
 
@@ -381,8 +398,8 @@ const textRoom = {
 		}
 	},
 	addToUserList: ( info ) => {
-		console.log( info );
-		console.log( "Add to user list: ", info );
+		Janus.log( info );
+		Janus.log( "Add to user list: ", info );
 		const userlist = document.getElementById( "user-list" );
 
 		const newlist     = document.createElement( "div" );
@@ -391,24 +408,24 @@ const textRoom = {
 		userlist.appendChild( newlist );
 
 		info[ "message" ] = `<b>${tr.textUsers[ info[ "username" ] ]}</b> has joined the room`;
-		console.log( info );
+		Janus.log( info );
 		tr.addStatusMessage( info );
 	},
 
 	removeFromUserList: ( info ) => {
 		delete tr.textUsers[ info[ "username" ] ];
 
-		console.log( tr.participants );
+		Janus.log( tr.participants );
 
 		if( tr.participants && tr.participants.length > 0 ) {
 			const p = tr.participants;
-			console.log( "Success!", info );
+			Janus.log( "Success!", info );
 			const len = p.length;
 			let i     = 0;
 
 			for( i = 0; i < len; i++ ) {
 				const user = p[ i ];
-				console.log( user );
+				Janus.log( user );
 			}
 		}
 
@@ -430,7 +447,7 @@ const textRoom = {
 		msgbox.scrollTop = msgbox.scrollHeight;
 	},
 	handleMessage: ( data ) => {
-		console.log( data );
+		Janus.log( data );
 		const info = {
 			from:    data[ "from" ],
 			text:    utils.cleanMessage( data[ "text" ] ),
@@ -446,21 +463,44 @@ const textRoom = {
 		message.className = message.class + classname;
 		tr.showMessage( message );
 	},
+	sendMessage: ( message, user ) => {
+		if( message === "" ) {
+			return;
+		}
+
+		message = {
+			textroom:    "message",
+			transaction: utils.randomString( 12 ),
+			room:        cr.roomId,
+			text:        message,
+		};
+
+		cr.users[ username ].data({
+			text:  JSON.stringify( message ),
+			error: function( reason ) {
+				Janus.error( message );
+			},
+			success: function() {
+				utils.resetChatBox();
+			},
+		});
+	},
 	handleJoin: ( data ) => {
+		console.log( "JOIN:", data );
 		const info = {
 			username: data[ "username" ],
 			display:  data[ "display" ],
 			date:     utils.getDateString(),
 		};
 
-		console.log( "Calling remove attribute" );
+		Janus.log( "Calling remove attribute" );
 		document.getElementById( "chat-text-input" ).removeAttribute( "disabled" );
 
 		if( !tr.textUsers.hasOwnProperty( data[ "username" ] ) ) {
 			tr.textUsers[ data[ "username" ] ] = data[ "display" ];
 		}
 
-		console.log( "Join JSON", data );
+		Janus.log( "Join JSON", data );
 		tr.textUsers[ data[ "username" ] ] = data[ "display" ];
 		const userItem                     = document.getElementById( "user-" + info[ "username" ] );
 
@@ -470,7 +510,7 @@ const textRoom = {
 			tr.addToUserList( info );
 		}
 
-		console.log( "Enabling user textbox" );
+		Janus.log( "Enabling user textbox" );
 		document.getElementById( "chat-text-input" ).removeAttribute( "disabled" );
 
 		if( vr.init === false ) {
@@ -478,7 +518,41 @@ const textRoom = {
 		}
 	},
 	handleSuccess: ( data ) => {
-		console.log( data );
+		const i = 0;
+
+		if( data[ "participants" ] && data[ "participants" ].length > 0 ) {
+			const p = data[ "participants" ];
+			console.log( "Success!", data );
+			const len = p.length;
+			let i     = 0;
+
+			for( i = 0; i < len; i++ ) {
+				const user = p[ i ];
+				info       = {
+					username: user[ "username" ],
+					display:  user[ "display" ],
+				};
+
+				if( !cr.users.hasOwnProperty( info.username ) ) {
+					cr.users[ info.username ] = info.display;
+				}
+			}
+		}
+	},
+	handleLeave: ( data ) => {
+		console.log( "Removing:", data );
+		const username = data[ "username" ];
+		const when     = new Date();
+		const elem     = document.getElementById( "user-" + username );
+		elem.parentNode.removeChild( elem );
+
+		const message = {
+			date:    utils.getDateString(),
+			message: `<b>${tr.textUsers[ username ]}</b> has left the room`,
+		};
+
+		tr.addStatusMessage( message );
+		delete tr.textUsers[ username ];
 	},
 	handleData: ( action, data ) => {
 		switch ( action ) {
@@ -495,13 +569,12 @@ const textRoom = {
 				break;
 
 			case "leave":
-				console.log( data );
+				Janus.log( data );
 				tr.handleLeave( data );
 				break;
 
 			default:
-				console.log( "OH NO", action );
-				console.log( action );
+				Janus.log( action );
 				break;
 		}
 	},

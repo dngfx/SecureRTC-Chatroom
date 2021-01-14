@@ -266,7 +266,7 @@ const textRoom = {
 		const info = {
 			username: data[ "username" ],
 			display:  tr.textUsers[ data[ "username" ] ],
-			date:     getDateString(),
+			date:     utils.getDateString(),
 		};
 
 		info[ "message" ] = `<b>${tr.textUsers[ info[ "username" ] ]}</b> has left the room`;
