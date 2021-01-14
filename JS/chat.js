@@ -1,704 +1,524 @@
-const chat = {
-	myid: null,
-	mypvtid: null,
-	roomid: null,
-	mynick: null,
-	mystream: null,
-	janus: null,
-	sfu: null,
-	feeds: {},
-	remoteFeed: null,
-	display: null,
-	started: false,
+const chatRoom = {
+	server:       null,
+	apiSecret:    null,
+	janus:        null,
+	roomId:       null,
+	userName:     null,
+	displayName:  null,
+	uniqueId:     null,
+	randomId:     null,
+	textRoom:     null,
+	videoRoom:    null,
+	chatRoom:     null,
+	debug:        "all",
+	transactions: {},
+	init:         ( server, room, user, display, uid, rid, apisecret ) => {
+		cr.server      = server;
+		cr.roomId      = room;
+		cr.userName    = user;
+		cr.displayName = display;
+		cr.uniqueId    = uid;
+		cr.randomId    = rid;
+		cr.apiSecret   = apisecret;
 
-	init: function (roomid, nick, display) {
-		chat.roomid = roomid;
-		chat.mynick = nick;
-		chat.display = display;
-
+		cr.initJanus();
+	},
+	initJanus: () => {
 		Janus.init({
-			debug: true,
+			debug:        cr.debug,
 			dependencies: Janus.useDefaultDependencies(),
-
-			callback: function() {
-				room.init();
-				text.init(nick, display);
-			}
+			callback:     () => {
+				cr.connectChat();
+			},
 		});
 	},
-
-	initJanus: function() {
-
-		chat.janus = new Janus({
-			debug: true,
-			server: server,
-			iceServers: rtcIceServers,
-			success: function() {
-				chat.janus.attach({
-					plugin: "janus.plugin.videoroom",
-					opaqueId: randomId,
-					success: function(pluginHandle) {
-						chat.sfu = pluginHandle;
-						Janus.log("Plugin attached! (" + chat.sfu.getPlugin() + ", id=" + chat.sfu.getId() + ")");
-						Janus.log("  -- This is a publisher/manager");
-
-						let register = {
+	connectChat: () => {
+		cr.janus = new Janus({
+			debug:      cr.debug,
+			server:     cr.server,
+			apisecret:  cr.apiSecret,
+			iceServers: cr.iceServers,
+			success:    () => {
+				cr.janus.attach({
+					plugin:   "janus.plugin.textroom",
+					opaqueId: cr.uniqueId,
+					success:  ( plugin ) => {
+						cr.chatRoom = plugin;
+						console.log( cr.chatRoom );
+						const register = {
 							request: "join",
-							room: chat.roomid,
-							ptype: "publisher",
-							display: chat.mynick
+							room:    cr.roomId,
+							ptype:   "publisher",
+							display: cr.displayName,
 						};
 
-						chat.sfu.send({
-							message: register
+						cr.chatRoom.send({
+							message: register,
 						});
 					},
-					error: function(error) {
-						Janus.error("  -- Error attaching plugin...", error);
+					error: ( error ) => {
+						Janus.error( "  -- Error attaching plugin...", error );
 					},
-					iceState: function(state) {
-						Janus.log("ICE state changed to " + state);
+					iceState: ( state ) => {
+						Janus.log( "ICE state changed to " + state );
 					},
-					mediaState: function(medium, on) {
-						Janus.log("Janus " + (on ? "started" : "stopped") + " receiving our " + medium);
+					mediaState: ( medium, on ) => {
+						Janus.log( "Janus " + ( on ? "started" : "stopped" ) + " receiving our " + medium );
 					},
-					webrtcState: function(on) {
-						Janus.log("Janus says our WebRTC PeerConnection is " + (on ? "up" : "down") + " now");
-						if(!on)
+					webrtcState: ( on ) => {
+						Janus.log( "Janus says our WebRTC PeerConnection is " + ( on ? "up" : "down" ) + " now" );
+						if( !on ) {
 							return;
-					},
-					onmessage(msg, jsep) {
-						Janus.debug(" ::: Got a message (publisher) :::", msg);
-						let event = msg["videoroom"];
-						Janus.debug("Event: " + event);
-
-						if(event) {
-							switch(event) {
-								case "joined":
-									console.log("JOINED: ", msg);
-									chat.myid = msg["id"];
-									chat.mypvtid = msg["private_id"];
-									Janus.log("Successfully joined room " + msg["room"] + " with ID " + chat.myid);
-									if( msg["publishers"] ) {
-										var list = msg["publishers"];
-										Janus.debug("Got a list of available publishers/feeds:", list);
-										for(var f in list) {
-											videochat.feed[list[f]["display"]] = {
-												feed: list[f],
-												nick: text.users[list[f]["display"]]
-											};
-											var id = list[f]["id"];
-											var display = list[f]["display"];
-											var audio = list[f]["audio_codec"];
-											var video = list[f]["video_codec"];
-											Janus.debug("  >> [" + id + "] " + (text.users[display]) + " (audio: " + audio + ", video: " + video + ")");
-
-											videochat.newRemoteFeed(id, display, text.users[display], audio, video);
-										}
-
-										console.log("VIDEOCHAT FEED", videochat.feed);
-									}
-									break;
-
-								case "event":
-									console.log(msg);
-									if(msg["publishers"]) {
-										var list = msg["publishers"];
-										Janus.debug("Got a list of available publishers/feeds:", list);
-										for(var f in list) {
-											var id = list[f]["id"];
-											var display = list[f]["display"];
-											var audio = list[f]["audio_codec"];
-											var video = list[f]["video_codec"];
-											Janus.debug("  >> [" + id + "] " + display + " " + (text.users[display]) + " (audio: " + audio + ", video: " + video + ")");
-											videochat.newRemoteFeed(id, display, text.users[display], audio, video);
-										}
-									} else if(msg["leaving"]) {
-										// One of the publishers has gone away?
-										var leaving = msg["leaving"];
-										Janus.log("Publisher left: " + leaving);
-										console.log("Publisher left", leaving);
-										console.log(chat.feeds, chat.feeds);
-										for(var i=1; i<16; i++) {
-											if(chat.feeds[i] && chat.feeds[i].rfid == leaving) {
-												chat.remoteFeed = chat.feeds[i];
-												break;
-											}
-										}
-										if(chat.remoteFeed != null) {
-											Janus.debug("Feed " + chat.remoteFeed.rfid + " (" + chat.remoteFeed.rfdisplay + ") has left the room, detaching");
-											chat.feeds[chat.remoteFeed.rfindex] = null;
-											chat.remoteFeed.detach();
-											console.log(chat.feeds);
-										}
-									} else if(msg["unpublished"]) {
-										// One of the publishers has unpublished?
-										var unpublished = msg["unpublished"];
-										Janus.log("Publisher left: " + unpublished);
-										if(unpublished === 'ok') {
-											// That's us
-											sfutest.hangup();
-											return;
-										}
-										for(var i=1; i<6; i++) {
-											if(chat.feeds[i] && chat.feeds[i].rfid == unpublished) {
-												chat.remoteFeed = chat.feeds[i];
-												break;
-											}
-										}
-										if(chat.remoteFeed != null) {
-											Janus.debug("Feed " + chat.remoteFeed.rfid + " (" + chat.remoteFeed.rfdisplay + ") has left the room, detaching");
-											chat.feeds[chat.remoteFeed.rfindex] = null;
-											chat.remoteFeed.detach();
-										}
-									} else if(msg["error"]) {
-										if(msg["error_code"] === 426) {
-											// This is a "no such room" error: give a more meaningful description
-											console.log("Room does not exist");
-										} else {
-											console.log(msg["error"]);
-										}
-									}
-							}
-						}
-						if(jsep) {
-							Janus.debug("Handling SDP as well...", jsep);
-							chat.sfu.handleRemoteJsep({ jsep: jsep });
-							// Check if any of the media we wanted to publish has
-							// been rejected (e.g., wrong or unsupported codec)
-							var audio = msg["audio_codec"];
-							if(chat.mystream && chat.mystream.getAudioTracks() && chat.mystream.getAudioTracks().length > 0 && !audio) {
-								// Audio has been rejected
-								console.log("Our audio stream has been rejected, viewers won't hear us");
-							}
-							var video = msg["video_codec"];
-							if(chat.mystream && chat.mystream.getVideoTracks() && chat.mystream.getVideoTracks().length > 0 && !video) {
-								// Video has been rejected
-								console.log("Our video stream has been rejected, viewers won't see us");
-
-							}
 						}
 					},
-					onlocalstream: function(stream) {
-						console.log(" ::: Got a local stream :::", stream);
-						Janus.debug(" ::: Got a local stream :::", stream);
-						chat.mystream = stream;
+					onmessage: ( message, jsep ) => {
+						console.log( " :: Got a message :::", message );
 
-						let localElem = document.getElementById("video-local");
+						if( message[ "error" ] ) {
+							console.error( message[ "error" ] );
 
-						videochat.showVideo(localElem, stream);
-						localElem = null;
-					},
-					onremotestream: function(stream) {
-						// The publisher stream is sendonly, we don't expect anything here
-					},
-					oncleanup: function() {
-						Janus.log(" ::: Got a cleanup notification: we are unpublished now :::");
-						chat.mystream = null;
-					}
-				});
-			}
-		});
-	}
-};
-
-const room = {
-	init: function() {
-		console.log("hello");
-		[...document.querySelectorAll(".no-video")].map(
-			(element, index, array) => {
-				let videoId = element.id;
-				element.onclick = function(self) {
-					videochat.element = element;
-					videochat.start(element);
-				};
-			}
-		);
-
-	}
-};
-
-const videochat = {
-	element: null,
-	feeds: {},
-	feed: {},
-	plugin: null,
-	start: function(id) {
-		chat.sfu.createOffer({
-			media: {
-				audioRecv: false,
-				videoRecv: false,
-				audioSend: false,
-				videoSend: true,
-				video: "lowres-16:9"
-			},
-			success: function(jsep) {
-				console.log("Got published SDP!", jsep);
-				Janus.debug("Got publisher SDP!", jsep);
-				let publish = { request: "configure", audio: false, video: true };
-				console.log("CONFIGUREID", id);
-				videochat.element = document.getElementById(id);
-				chat.sfu.send({
-					message: publish,
-					jsep: jsep
-				});
-
-				videochat.element = id;
-			}
-		})
-	},
-	showVideo: function(element, stream) {
-		let id = element.id.replace("video", "stream");
-		let buttonId = element.id.replace("video", "loadvideo");
-		document.getElementById(buttonId).style = "display: none;";
-		document.getElementById(id).style = "display: block; max-width: 100%; max-height: 100%;";
-
-		let videoElem = document.getElementById(id);
-
-		Janus.attachMediaStream(videoElem, stream);
-		videoElem.play();
-	},
-	newRemoteFeed: function(id, display, nick, audio, video) {
-		chat.remoteFeed = null;
-		chat.janus.attach({
-			plugin: "janus.plugin.videoroom",
-			opaqueId: chat.opaqueId,
-			success: function(pluginHandle) {
-				chat.remoteFeed = pluginHandle;
-				chat.remoteFeed.simulcastStarted = false;
-				Janus.log("Plugin attached! (" + chat.remoteFeed.getPlugin() + ", id=" + chat.remoteFeed.getId() + ")");
-				Janus.log("  -- This is a subscriber");
-				Janus.log(" -- ", chat.remoteFeed.getId(), id);
-				// We wait for the plugin to send us an offer
-				let subscribe = {
-					request: "join",
-					room: roomid,
-					ptype: "subscriber",
-					feed: id,
-					private_id: chat.mypvtid
-				};
-				// In case you don't want to receive audio, video or data, even if the
-				// publisher is sending them, set the 'offer_audio', 'offer_video' or
-				// 'offer_data' properties to false (they're true by default), e.g.:
-				// 		subscribe["offer_video"] = false;
-				// For example, if the publisher is VP8 and this is Safari, let's avoid video
-				if(Janus.webRTCAdapter.browserDetails.browser === "safari" &&
-						(video === "vp9" || (video === "vp8" && !Janus.safariVp8))) {
-					if(video) {
-						video = videochat.toUpperCase()
-					}
-					console.warn("Publisher is using " + video + ", but Safari doesn't support it: disabling video");
-					subscribe["offer_video"] = false;
-				}
-				chat.remoteFeed.videoCodec = video;
-				chat.remoteFeed.send({ message: subscribe });
-			},
-			error: function(error) {
-				Janus.error("  -- Error attaching plugin...", error);
-				console.log(JSON.stringify(error));
-			},
-			onmessage: function(msg, jsep) {
-				Janus.debug(" ::: Got a message (subscriber) :::", msg);
-				console.log("Got a message (Subscriber)", msg, jsep);
-				var event = msg["videoroom"];
-
-				if( msg["error"] ) {
-					console.log("Error in onmessage: ", msg["error"]);
-				} else if(event) {
-					if(event === "attached") {
-						let uid = msg["id"];
-
-						console.log(chat.remoteFeed);
-						if( chat.feeds.hasOwnProperty(uid) ) {
 							return;
 						}
 
+						if( jsep ) {
+							console.log( "Handling JSEP", jsep );
 
-						console.log("Adding feed:", uid);
-							chat.feeds[uid] = {
-								nick: text.users[msg["display"]],
-								id: msg["id"],
-								display: msg["display"],
-								loading: false
-							};
+							cr.textPlugin.createAnswer({
+								jsep:  jsep,
+								media: {
+									audio: false,
+									video: false,
+									data:  true,
+								},
+								success: ( jsep ) => {
+									console.log( "Got SDP For TextRoom:", jsep );
+									const body = {
+										request: "ack",
+									};
 
-							if(!chat.remoteFeed.loading) {
-								//console.log(target);
-								chat.remoteFeed.loading = true;
-							} else {
-								let len, cur;
-								console.log("FEEDS", chat.feeds);
-								for(feed in chat.feeds) {
-									cur = chat.feeds[feed];
-									console.log("CUR", cur);
-									let target = newVideoElement(uid, uid, text.users[msg["display"]]);
-									document.getElementById("video-container").appendChild(target);
+									cr.textPlugin.send({
+										message:   body,
+										apisecret: cr.apiSecret,
+										jsep:      jsep,
+									});
+								},
+								error: ( error ) => {
+									Janus.error( "WebRTC Error:", error );
+								},
+							});
+						}
+					},
+					ondataopen: ( data ) => {
+						console.log( "The DataChannel is now available!" );
+						const transaction = utils.randomString( 12 );
 
+						const register = {
+							textroom:    "join",
+							transaction: transaction,
+							room:        cr.roomId,
+							username:    cr.userName,
+							display:     cr.displayName,
+							apisecret:   cr.apiSecret,
+						};
+
+						cr.transactions[ transaction ] = ( response ) => {
+							if( response[ "textroom" ] === "error" ) {
+								switch ( response[ "error_code" ] ) {
+									case 417:
+										console.error( "There is no such room" );
+										break;
+
+									default:
+										console.error( "Unknown error", response[ "error" ] );
+										break;
 								}
-								chat.remoteFeed.loading = false;
 							}
-							Janus.log("Successfully attached to feed " + chat.feeds[uid].id + " (" + chat.feeds[uid].display + ") in room " + msg["room"]);
-					}
-				}
-				if(jsep) {
-					Janus.debug("Handling SDP as well...", jsep);
-					// Answer and attach
-					chat.remoteFeed.createAnswer(
-						{
-							jsep: jsep,
-							// Add data:true here if you want to subscribe to datachannels as well
-							// (obviously only works if the publisher offered them in the first place)
-							media: { audioSend: false, videoSend: false },	// We want recvonly audio/video
-							success: function(jsep) {
-								Janus.debug("Got SDP!", jsep);
-								var body = { request: "start", room: roomid };
-								chat.remoteFeed.send({ message: body, jsep: jsep });
-							},
-							error: function(error) {
-								Janus.error("WebRTC error:", error);
-								//bootbox.alert("WebRTC error... " + error.message);
-							}
-						});
-				}
-			},
-			iceState: function(state) {
-				Janus.log("ICE state of this WebRTC PeerConnection (feed #" + chat.remoteFeed.rfindex + ") changed to " + state);
-			},
-			webrtcState: function(on) {
-				Janus.log("Janus says this WebRTC PeerConnection (feed #" + chat.remoteFeed.rfindex + ") is " + (on ? "up" : "down") + " now");
-			},
-			onlocalstream: function(stream) {
-				// The subscriber stream is recvonly, we don't expect anything here
-			},
-			onremotestream: function(stream) {
-				console.log(stream, id, chat.feeds);
 
-				let videoElem = document.getElementById("stream-" + id);
-				if( videoElem !== null ) {
+							let i, info, nonExists;
+
+							const rp = response.participants;
+							if( rp && rp.length > 0 ) {
+								for( i in rp ) {
+									const p = rp[ i ];
+									console.log( `Participant ${i}`, p );
+
+									notExists = document.getElementById( "user-" + p.username ) === null;
+
+									cr.participants[ p.username ] = p.display;
+									if( p.username !== cr.userName && notExists ) {
+										info = {
+											username:  p.username,
+											display:   p.display,
+											date:      utils.getDateString(),
+											apisecret: cr.apiSecret,
+										};
+
+										if( !tr.textUsers[ info[ "username" ] ] ) {
+											tr.textUsers[ info[ "username" ] ] = info[ "display" ];
+										}
+
+										console.log( "Trying to add to user list", info );
+
+										tr.addToUserList( info );
+									}
+								}
+							}
+						};
+
+						cr.textPlugin.data({
+							text:  JSON.stringify( register ),
+							error: ( reason ) => {
+								console.error( reason );
+							},
+						});
+					},
+					ondata: ( data ) => {
+						const json        = JSON.parse( data );
+						const transaction = json[ "transaction" ];
+
+						if( cr.transactions[ transaction ] ) {
+							console.log( "Pushing transaction ", transaction );
+							cr.transactions[ transaction ]( json );
+							delete cr.transactions[ transaction ];
+
+							return;
+						}
+
+						const action = json[ "textroom" ];
+						console.log( "Action: ", action );
+
+						tr.handleData( action, json );
+					},
+				});
+			},
+		});
+	},
+	addToUserList: ( info ) => {
+		console.log( "Add to user list: ", info );
+		const userlist = document.getElementById( "user-list" );
+
+		const newlist     = document.createElement( "div" );
+		newlist.id        = "user-" + info[ "username" ];
+		newlist.innerText = tr.textUsers[ info[ "username" ] ];
+		userlist.appendChild( newlist );
+
+		info[ "message" ] = `<b>${tr.textUsers[ info[ "username" ] ]}</b> has joined the room`;
+		console.log( info );
+		tr.addStatusMessage( info );
+	},
+};
+
+const videoRoom = {
+	videoFeeds:      {},
+	videoConnection: null,
+	init:            ( id, server ) => {},
+	joinRoom:        () => {},
+};
+
+const textRoom = {
+	textUsers:      {},
+	textConnection: null,
+	textSession:    null,
+	textPlugin:     null,
+	init:           ( id, server ) => {
+		tr.textConnection = Janus.init({
+			debug:        cr.debug,
+			dependencies: Janus.useDefaultDependencies(),
+			callback:     () => {
+				tr.connectTextRoom();
+			},
+		});
+	},
+	connectTextRoom: () => {
+		tr.textConnection.attach({
+			plugin:   "janus.plugin.textroom",
+			opaqueId: cr.uniqueId,
+			success:  ( plugin ) => {
+				cr.textPlugin = plugin;
+
+				console.log( "Plugin attached! (" + cr.textPlugin.getPlugin() + ", id=" + cr.textPlugin.getId() + ")" );
+				const body = {
+					request:   "setup",
+					apisecret: cr.apiSecret,
+				};
+
+				console.log( "Sending message:", body );
+				cr.textPlugin.send({
+					message:   body,
+					apisecret: cr.apiSecret,
+				});
+			},
+			error: ( error ) => {
+				console.log( "-- Error attaching textroom plugin", error );
+			},
+			iceState: ( state ) => {
+				console.log( "ICE state changed to " + state );
+			},
+			mediaState: ( medium, on ) => {
+				console.log( "Janus " + ( on ? "started" : "stopped" ) + " receiving our " + medium );
+			},
+			webrtcState: ( on ) => {
+				console.log( "Janus says our WebRTC PeerConnection is " + ( on ? "up" : "down" ) + " now" );
+			},
+			onmessage: ( message, jsep ) => {
+				console.log( ":: Got a textRoom Message :: ", message );
+
+				if( message[ "error" ] ) {
+					console.error( message[ "error" ] );
+
 					return;
 				}
 
-				let rf = chat.remoteFeed;
-				Janus.log("Remote feed #" + rf.rfindex + ", stream:", stream);
-				let video = document.getElementById("stream-" + id);
-				if( video === null ) {
-					video = newVideoElement(id, rf.rfdisplay, text.users[chat.remoteFeed.rfdisplay]);
-					document.getElementById("video-container").appendChild(video);
-				}
+				if( jsep ) {
+					console.log( "Handling JSEP", jsep );
 
-				videoElem = document.getElementById("stream-" + id);
-				Janus.attachMediaStream(videoElem, stream);
-
-				let videoTracks = stream.getVideoTracks();
-				if(!videoTracks || videoTracks.length === 0) {
-
-				} else {
-					videoElem.play();
-				}
-			},
-			oncleanup: function() {
-				Janus.log(" ::: Got a cleanup notification (remote feed " + chat.remoteFeed.rfindex + ") :::");
-				let videoContainer = document.getElementById("videotemplate-" + id);
-				videoContainer.parentNode.removeChild(videoContainer);
-			}
-		});
-	}
-};
-
-const text = {
-	users: {},
-	transactions: {},
-	room: null,
-	janus: null,
-	username: null,
-	display: null,
-	init: function(nick, display) {
-		text.username = nick;
-		text.display = display;
-		console.log("Nick & display from function: ", nick, display);
-		text.janus = new Janus({
-				server: server,
-				debug: true,
-				success: function() {
-					text.janus.attach({
-						plugin: "janus.plugin.textroom",
-						opaqueId: randomId,
-						success: function(pluginHandle) {
-							text.room = pluginHandle;
-
-							Janus.log("Plugin attached! (" + text.room.getPlugin() + ", id=" + text.room.getId() + ")");
-							let body = {
-								request: "setup"
+					cr.textPlugin.createAnswer({
+						jsep:  jsep,
+						media: {
+							audio: false,
+							video: false,
+							data:  true,
+						},
+						success: ( jsep ) => {
+							console.log( "Got SDP For TextRoom:", jsep );
+							const body = {
+								request: "ack",
 							};
 
-							Janus.debug("Sending message:", body);
-							text.room.send({ message: body });
-						},
-						error: function(error) {
-							console.error("  -- Error attaching plugin...", error);
-							//bootbox.alert("Error attaching plugin... " + error);
-						},
-						iceState: function(state) {
-							Janus.log("ICE state changed to " + state);
-						},
-						mediaState: function(medium, on) {
-							Janus.log("Janus " + (on ? "started" : "stopped") + " receiving our " + medium);
-						},
-						webrtcState: function(on) {
-							Janus.log("Janus says our WebRTC PeerConnection is " + (on ? "up" : "down") + " now");
-						},
-						onmessage: function(msg, jsep) {
-							Janus.debug(" ::: Got a message :::", msg);
-							if(msg["error"]) {
-								bootbox.alert(msg["error"]);
-							}
-							if(jsep) {
-								// Answer
-								text.room.createAnswer({
-										jsep: jsep,
-										media: { audio: false, video: false, data: true },	// We only use datachannels
-										success: function(jsep) {
-											Janus.debug("Got SDP!", jsep);
-											var body = { request: "ack" };
-											text.room.send({ message: body, jsep: jsep });
-										},
-										error: function(error) {
-											Janus.error("WebRTC error:", error);
-										//	bootbox.alert("WebRTC error... " + error.message);
-										}
-								});
-							}
-						},
-						ondataopen: function(data) {
-							Janus.log("The DataChannel is available!");
-							let transaction = randomString(12);
-							let register = {
-								textroom: "join",
-								transaction: transaction,
-								room: roomid,
-								username: text.username,
-								display: text.display
-							};
-
-							text.room.data({
-								text: JSON.stringify(register),
-								error: function(reason) {
-									console.log(reason);
-								}
+							cr.textPlugin.send({
+								message:   body,
+								apisecret: cr.apiSecret,
+								jsep:      jsep,
 							});
 						},
-						ondata: function(data) {
-							let msg = "";
-							Janus.debug("We got data from the DataChannel!", data);
-							let json = JSON.parse(data);
-							let transaction = json["transaction"];
-							if(text.transactions[transaction]) {
-								Janus.log("Pushing transaction ", transaction);
-								text.transactions[transaction](json);
-								delete text.transactions[transaction];
-								return;
-							}
-
-							let action = json["textroom"];
-							console.log(json);
-
-							switch(action) {
-								case "message":
-									msg = json["text"];
-									msg = cleanMessage(msg);
-
-									let from = json["from"];
-
-									let dateString = getDateString(json["date"]);
-									let privmsg = json["whisper"] === true;
-
-									text.addMessage(data, dateString, from, msg, privmsg);
-								break;
-
-								case "join":
-								case "success":
-									let user = json["username"];
-									let display = json["display"];
-									let participants = json["participants"];
-									let p;
-
-									document.getElementById("chat-text-input").removeAttribute("disabled");
-
-									// No users in the channel
-									if( action === "success" && participants ) {
-										for(let i = 0; i < participants.length; i++) {
-											p = participants[i];
-											console.log("PARTICIPANT: ", p);
-											user = p.username;
-											display = p.display;
-
-											text.users[user] = display !== undefined ? display : user;
-											let useritem = document.getElementById("user-" + user);
-											if( user !== text.username ) {
-												let userlist = document.getElementById("user-list");
-												let newlist = document.createElement("div");
-												newlist.id = "user-" + user;
-												newlist.innerText = text.users[user];
-												userlist.appendChild(newlist);
-											}
-										}
-
-										console.log(text.users);
-									} else if(action === "join") {
-										text.users[user] = display !== undefined ? display : user;
-										let useritem = document.getElementById("user-" + user);
-										if( useritem === null ) {
-											let userlist = document.getElementById("user-list");
-											let newlist = document.createElement("div");
-											newlist.id = "user-" + user;
-											newlist.innerText = text.users[user];
-											userlist.appendChild(newlist);
-											msg = `<b>${text.users[user]}</b> has joined the room`;
-											text.addStatusMessage(data, getDateString(), msg);
-										}
-									}
-
-									if( action === "success" && chat.started === false ) {
-										chat.initJanus();
-										chat.started = true;
-									}
-								break;
-
-								case "leave":
-									let username = json["username"];
-									let when = new Date();
-									let elem = document.getElementById("user-" + username);
-									elem.parentNode.removeChild(elem);
-									msg = `<b>${text.users[username]}</b> has left the room`;
-
-									text.addStatusMessage(data, getDateString(), msg);
-									delete text.users[username];
-								break;
-							}
-
-							delete msg;
+						error: ( error ) => {
+							Janus.error( "WebRTC Error:", error );
 						},
-						oncleanup: function() {
-							Janus.log(" ::: Got a cleanup notification :::");
-						}
 					});
-				},
-				error: function(error) {
-					Janus.error(error);
-				},
-				destroyed: function() {
-					window.location.reload();
 				}
+			},
+			ondataopen: ( data ) => {
+				console.log( "The TextRoom DataChannel is available" );
+				const transaction = utils.randomString( 12 );
+				const register    = {
+					textroom:    "join",
+					transaction: transaction,
+					room:        cr.roomId,
+					username:    cr.userName,
+					display:     cr.displayName,
+					apisecret:   cr.apiSecret,
+				};
+
+				cr.transactions[ transaction ] = ( response ) => {
+					if( response[ "textroom" ] === "error" ) {
+						console.error( `Error code ${response[ "error_code" ]} ${response}` );
+
+						return;
+					}
+
+					let i, info;
+
+					if( response.participants && response.participants.length > 0 ) {
+						for( i in response.participants ) {
+							const p                       = response.participants[ i ];
+							cr.participants[ p.username ] = p.display;
+							if( p.username !== cr.userName && document.getElementById( "user-" + p.username ) === null ) {
+								info = {
+									username: p.username,
+									display:  p.display,
+									date:     utils.getDateString(),
+								};
+
+								if( !tr.textUsers[ info[ "username" ] ] ) {
+									tr.textUsers[ info[ "username" ] ] = info[ "display" ];
+								}
+
+								tr.addToUserList( info );
+							}
+						}
+					}
+				};
+
+				console.log( JSON.stringify( register ) );
+				cr.textPlugin.data({
+					text:  JSON.stringify( register ),
+					error: ( reason ) => {
+						console.error( reason );
+					},
+				});
+			},
+			ondata: ( data ) => {
+				const json        = JSON.parse( data );
+				const transaction = json[ "transaction" ];
+
+				if( cr.transactions[ transaction ] ) {
+					console.log( "Pushing transaction ", transaction );
+					cr.transactions[ transaction ]( json );
+					delete cr.transactions[ transaction ];
+
+					return;
+				}
+
+				const action = json[ "textroom" ];
+				console.log( "Action: ", action );
+
+				console.log( "Handling data: ", action, json );
+				tr.handleData( action, json );
+			},
 		});
 	},
-	sendMessage: function(message) {
-		if(message === "") {
-			return;
+	addUsersToRoom: ( participants ) => {
+		let i, info;
+
+		for( i in participants ) {
+			const p = participants[ i ];
+			console.log( `Participant ${i}`, p );
+
+			cr.participants[ p.username ] = p.display;
+
+			if( p.username !== cr.userName && document.getElementById( "user-" + p.username ) === null ) {
+				info = {
+					username:  p.username,
+					display:   p.display,
+					date:      utils.getDateString(),
+					apisecret: cr.apiSecret,
+				};
+
+				if( !tr.textUsers[ info[ "username" ] ] ) {
+					tr.textUsers[ info[ "username" ] ] = info[ "display" ];
+				}
+
+				tr.addToUserList( info );
+			}
+		}
+	},
+	addToUserList: ( info ) => {
+		console.log( info );
+		console.log( "Add to user list: ", info );
+		const userlist = document.getElementById( "user-list" );
+
+		const newlist     = document.createElement( "div" );
+		newlist.id        = "user-" + info[ "username" ];
+		newlist.innerText = tr.textUsers[ info[ "username" ] ];
+		userlist.appendChild( newlist );
+
+		info[ "message" ] = `<b>${tr.textUsers[ info[ "username" ] ]}</b> has joined the room`;
+		console.log( info );
+		tr.addStatusMessage( info );
+	},
+
+	removeFromUserList: ( info ) => {
+		delete tr.textUsers[ info[ "username" ] ];
+
+		console.log( tr.participants );
+
+		if( tr.participants && tr.participants.length > 0 ) {
+			const p = tr.participants;
+			console.log( "Success!", info );
+			const len = p.length;
+			let i     = 0;
+
+			for( i = 0; i < len; i++ ) {
+				const user = p[ i ];
+				console.log( user );
+			}
 		}
 
-		message = {
-			textroom: "message",
-			transaction: randomString(12),
-			room: roomid,
-			text: message,
+		const elem = document.getElementById( "user-" + info[ "username" ] );
+		elem.parentNode.removeChild( elem );
+
+		tr.addStatusMessage( info );
+	},
+
+	addStatusMessage: ( info ) => {
+		const message     = utils.buildChatMessage( info[ "date" ], info[ "message" ] );
+		message.className = message.class + " status";
+		tr.showMessage( message );
+	},
+
+	showMessage: ( message ) => {
+		const msgbox = document.getElementById( "chat-box-text" );
+		msgbox.appendChild( message );
+		msgbox.scrollTop = msgbox.scrollHeight;
+	},
+	handleMessage: ( data ) => {
+		console.log( data );
+		const info = {
+			from:      data[ "from" ],
+			text:      utils.cleanMessage( data[ "text" ] ),
+			date:      utils.getDateString( data[ "date" ] ),
+			private:   data[ "whisper" ] === true,
+			apisecret: cr.apiSecret,
 		};
 
-		text.room.data({
-			text: JSON.stringify(message),
-			error: function(reason) { Janus.error(message); },
-			success: function() { resetChatBox(); }
-		});
+		tr.addMessage( info );
 	},
-	addMessage: function(data, dateString, from, msg, privmsg) {
-		let className = privmsg ? " privmsg" : "";
-		let message = buildChatMessage(dateString, `<b class="username">${text.users[from]}</b> ${msg}`);
-		message.className = message.class + className;
-		text.showMessage(message);
+	addMessage: ( info ) => {
+		const classname   = info[ "private" ] ? " privmsg" : "";
+		const message     = utils.buildChatMessage( info[ "date" ], `<b class="username">${tr.textUsers[ info[ "from" ] ]}</b> ${info.text}` );
+		message.className = message.class + classname;
+		tr.showMessage( message );
 	},
-	addStatusMessage: function(data, date, message) {
-		message = buildChatMessage(date, message);
-		message.className = message.class + " status";
-		text.showMessage(message);
+	handleJoin: ( data ) => {
+		const info = {
+			username:  data[ "username" ],
+			display:   data[ "display" ],
+			date:      utils.getDateString(),
+			apisecret: cr.apiSecret,
+		};
+
+		console.log( "Calling remove attribute" );
+		document.getElementById( "chat-text-input" ).removeAttribute( "disabled" );
+
+		if( !tr.textUsers.hasOwnProperty( data[ "username" ] ) ) {
+			tr.textUsers[ data[ "username" ] ] = data[ "display" ];
+		}
+
+		console.log( "Join JSON", data );
+		tr.textUsers[ data[ "username" ] ] = data[ "display" ];
+		const userItem                     = document.getElementById( "user-" + info[ "username" ] );
+
+		// If user is not in the list
+		if( userItem === null ) {
+			// Add them
+			tr.addToUserList( info );
+		}
+
+		console.log( "Enabling user textbox" );
+		document.getElementById( "chat-text-input" ).removeAttribute( "disabled" );
+
+		if( vr.init === false ) {
+			//vr.connectVideo();
+		}
 	},
-	showMessage: function(message) {
-		let msgbox = document.getElementById("chat-box-text");
-		msgbox.appendChild(message);
-		msgbox.scrollTop = msgbox.scrollHeight;
-	}
+	handleData: ( action, data ) => {
+		console.log( action, data );
+		switch ( action ) {
+			case "message":
+				tr.handleMessage( data );
+				break;
+
+			case "join":
+				tr.handleJoin( data );
+				break;
+
+			case "success":
+				tr.handleSuccess( data );
+				break;
+
+			case "leave":
+				console.log( data );
+				tr.handleLeave( data );
+				break;
+
+			default:
+				console.log( "OH NO", action );
+				console.log( action );
+				break;
+		}
+	},
 };
 
-function buildChatMessage(date, text) {
-	let message = document.createElement("div");
-	message.class = "chat-message";
-	message.innerHTML = `[${date}] ${text}`;
-	return message;
-}
-
-function cleanMessage(msg) {
-	console.log("Cleaning message", msg);
-	msg = msg.replace(new RegExp('<', 'g'), '&lt');
-	msg = msg.replace(new RegExp('>', 'g'), '&gt');
-
-	return msg;
-}
-
-function newVideoElement(id, display, nick) {
-	console.log("New video element", id, display, nick);
-	let card = document.getElementById("videotemplate").cloneNode(true);
-	card.id = "videotemplate-" + id;
-	let header = card.querySelectorAll("#videouser")[0];
-	header.id = "videouser-" + id;
-	header.innerText = nick;
-	let stream = card.querySelectorAll("#stream")[0];
-	stream.id = "stream-" + id;
-	stream.style = "display: block; max-width: 100%; max-height: 100%;";
-
-	return card;
-}
-
-function randomString(len, charSet) {
-	charSet = charSet || 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-	var randomString = '';
-	for (var i = 0; i < len; i++) {
-		var randomPoz = Math.floor(Math.random() * charSet.length);
-		randomString += charSet.substring(randomPoz,randomPoz+1);
-	}
-	return randomString;
-}
-
-function getDateString(jsonDate) {
-	var when = new Date();
-	if(jsonDate) {
-		when = new Date(Date.parse(jsonDate));
-	}
-	var dateString =
-			("0" + when.getUTCHours()).slice(-2) + ":" +
-			("0" + when.getUTCMinutes()).slice(-2) + ":" +
-			("0" + when.getUTCSeconds()).slice(-2);
-	return dateString;
-}
-
-function checkEnter(field, event) {
-	var theCode = event.keyCode ? event.keyCode : event.which ? event.which : event.charCode;
-	if(theCode == 13) {
-		if(field.id === 'chat-text-input') {
-			text.sendMessage(field.value);
-		}
-		return false;
-	} else {
-		return true;
-	}
-}
-
-function resetChatBox() {
-	document.getElementById('chat-text-input').value = "";
-}
-
-function cloneObj(obj) {
-    if (null == obj || "object" != typeof obj) return obj;
-    var copy = obj.constructor();
-    for (var attr in obj) {
-        if (obj.hasOwnProperty(attr)) copy[attr] = obj[attr];
-    }
-    return copy;
-}
+const cr = chatRoom;
+const vr = videoRoom;
+const tr = textRoom;

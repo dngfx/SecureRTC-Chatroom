@@ -7,24 +7,16 @@
 		<link href="./CSS/all.min.css" type="text/css" rel="stylesheet">
 		<script type="text/javascript" src="./JS/adapter.js"></script>
 		<script type="text/javascript" src="./JS/janus.js"></script>
-		<script type="text/javascript" src="./JS/chat-new.js"></script>
+		<script type="text/javascript" src="./JS/utils.js"></script>
+		<script type="text/javascript" src="./JS/chat.js"></script>
+
 		<script type="text/javascript">
 			const server = "wss://websocket.misconfigured.link:9888";
-			const randomId = randomString(12);
+			const randomId = utils.randomString(12);
 			const uniqueId = "chat-" + randomId;
-			const username = randomString(5);
+			const username = utils.randomString(5);
 			const roomid = 1234;
 			const apiSecret = "boners";
-			const rtcIceServers = [
-				{
-					urls: "stun:turn.misconfigured.link:9696"
-				}, {
-					urls: ["turns:turn.misconfigured.link:9696?transport=tcp"],
-					username: "dongfix",
-					credential: "bonerpatrol",
-					credentialType: "password"
-				}
-			];
 
 			let displayname = null;
 			let sfu = null;
@@ -34,6 +26,19 @@
 			let videoFeeds = [];
 			let bitrateTimer = [];
 
+			const rtcIceServers = {
+				iceServers:[{
+					urls: "stun:turn.misconfigured.link:9696"
+				},
+				{
+					urls: ["turns:turn.misconfigured.link:9696?transport=tcp"],
+					username: "dongfix",
+					credential: "bonerpatrol",
+					credentialType: "password"
+				}],
+				iceTransportPolicy: "relay"
+			};
+
 			let doSimulcast = false;
 			let doSimulcast2 = false;
 			let subscriberMode = true;
@@ -42,7 +47,7 @@
 				let theCode = event.keyCode ? event.keyCode : event.which ? event.which : event.charCode;
 				if(theCode == 13 && elem.value != "") {
 					displayname = elem.value;
-					chatRoom.init(roomid, username, displayname, apiSecret);
+					cr.init(server, roomid, username, displayname, uniqueId, randomId, apiSecret);
 					this.onclick = null;
 					let barrier = document.getElementById("click-to-join");
 					barrier.parentNode.removeChild(barrier);
